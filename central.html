@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Central Lucas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
+  <style>
+    /* Fundo Escuro de Fibra de Carbono / Micro Trama com Vinheta Radial */
+    body {
+      background-color: #060606;
+      background-image: 
+        radial-gradient(circle at center, rgba(30, 30, 30, 0.4) 0%, rgba(5, 5, 5, 0.95) 80%),
+        linear-gradient(27deg, #121212 5px, transparent 5px),
+        linear-gradient(207deg, #121212 5px, transparent 5px),
+        linear-gradient(117deg, #121212 5px, transparent 5px),
+        linear-gradient(297deg, #121212 5px, transparent 5px);
+      background-size: 100% 100%, 12px 12px, 12px 12px, 12px 12px, 12px 12px;
+      background-position: center, 0 0, 6px 6px, 6px 0, 0 6px;
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    
+    /* Efeito Glow / Laranja Fluorescente */
+    .fluorescent-orange {
+      color: #ff5500;
+      text-shadow: 0 0 10px rgba(255, 85, 0, 0.7), 0 0 20px rgba(255, 85, 0, 0.5), 0 0 30px rgba(255, 85, 0, 0.3);
+    }
+
+    /* Estilo das Caixinhas com Bordas Espessas */
+    .card-item {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+      border-width: 3px;
+      border-style: solid;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+    }
+    
+    .card-item:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.8), 0 0 18px currentColor;
+    }
+
+    .card-item.dragging {
+      opacity: 0.3;
+      transform: scale(0.96);
+      border-color: #ff5500 !important;
+    }
+
+    .drag-handle {
+      cursor: grab;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .description-box {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: all 0.3s ease-in-out;
+    }
+
+    .description-box.open {
+      max-height: 200px;
+      opacity: 1;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed rgba(255, 255, 255, 0.25);
+    }
+
+    /* Scrollbar Personalizada */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #060606;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #222;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ff5500;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-16">
+
+  <!-- Header Centralizado -->
+  <header class="bg-black/60 backdrop-blur-md border-b border-white/10 sticky top-0 z-30 shadow-2xl py-6 sm:py-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative">
+      
+      <!-- Título Maior em Laranja Fluorescente -->
+      <div class="inline-flex flex-col items-center justify-center">
+        <h1 class="text-4xl sm:text-6xl font-black tracking-wider uppercase fluorescent-orange">
+          Central Lucas
+        </h1>
+        <p class="text-xs sm:text-sm text-slate-400 mt-2 font-semibold tracking-widest uppercase">
+          Painel de Controle e Serviços
+        </p>
+      </div>
+
+      <!-- Botões de Ação Superiores (Direita) -->
+      <div class="mt-4 sm:mt-0 sm:absolute sm:right-6 sm:top-1/2 sm:-translate-y-1/2 flex items-center justify-center gap-3">
+        <!-- Undo Button -->
+        <button id="undo-btn" onclick="undoLastAction()" class="hidden bg-neutral-900/90 hover:bg-neutral-800 text-slate-200 text-sm px-3.5 py-2 rounded-xl border border-neutral-700/80 flex items-center gap-2 transition shadow-lg">
+          <i class="fa-solid font-bold text-amber-400 fa-rotate-left"></i>
+          <span class="hidden md:inline">Desfazer</span>
+        </button>
+
+        <!-- New Service Button -->
+        <button onclick="openModal()" class="bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-bold text-sm px-5 py-2.5 rounded-xl flex items-center gap-2 shadow-lg shadow-orange-600/30 transition border border-white/20">
+          <i class="fa-solid fa-plus"></i>
+          <span>Novo Serviço</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+    
+    <!-- Controls Bar com Seletor de Modo de Visualização -->
+    <div class="mb-8 flex flex-col md:flex-row gap-4 justify-between items-center bg-black/60 p-4 rounded-2xl border border-white/10 backdrop-blur-sm shadow-xl">
+      <!-- Busca -->
+      <div class="relative w-full md:w-80">
+        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+        <input type="text" id="search-input" oninput="renderAll()" placeholder="Buscar serviço ou descrição..." class="w-full bg-neutral-950 border border-neutral-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-orange-500 transition">
+      </div>
+      
+      <!-- Seletor de Modo de Visualização -->
+      <div class="flex items-center gap-2 bg-neutral-950 p-1.5 rounded-xl border border-neutral-800 w-full md:w-auto justify-center">
+        <button id="view-both-btn" onclick="setViewMode('both')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-orange-600 text-white shadow">
+          <i class="fa-solid fa-columns"></i>
+          <span>Ambos</span>
+        </button>
+        <button id="view-grid-btn" onclick="setViewMode('grid')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white">
+          <i class="fa-solid fa-grip"></i>
+          <span>Apenas Grade</span>
+        </button>
+        <button id="view-sidebar-btn" onclick="setViewMode('sidebar')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white">
+          <i class="fa-solid fa-list-ul"></i>
+          <span>Apenas Lista</span>
+        </button>
+      </div>
+
+      <!-- Dica de Uso -->
+      <div class="text-xs text-slate-400 hidden xl:flex items-center gap-3 font-medium">
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-grip-vertical text-slate-500"></i> Arraste os cards</span>
+        <span class="text-slate-600">•</span>
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-eye text-slate-500"></i> Olho para ver detalhes</span>
+      </div>
+    </div>
+
+    <!-- Layout Dividido (Sidebar + Grid) -->
+    <div class="flex flex-col lg:flex-row gap-8 items-start">
+      
+      <!-- Lista Lateral (Sidebar) -->
+      <aside id="sidebar-container" class="w-full lg:w-80 flex-shrink-0 bg-black/60 border border-white/10 rounded-2xl p-5 backdrop-blur-sm shadow-xl sticky top-28">
+        <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-list text-orange-500"></i>
+            <span>Lista de Serviços</span>
+          </h2>
+          <span id="sidebar-count" class="bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-extrabold px-2.5 py-0.5 rounded-full">
+            0
+          </span>
+        </div>
+
+        <div id="sidebar-list" class="space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+          <!-- Lista gerada via JS -->
+        </div>
+      </aside>
+
+      <!-- Main Container (Grid de Cards) -->
+      <div id="grid-container" class="flex-1 w-full">
+        <!-- Cards Grid -->
+        <div id="cards-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
+          <!-- Cards são gerados via JS -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden py-20 text-center">
+          <div class="w-20 h-20 bg-neutral-900 rounded-3xl flex items-center justify-center mx-auto mb-4 text-slate-500 text-3xl border border-neutral-800 shadow-inner">
+            <i class="fa-solid fa-cubes"></i>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-300">Nenhum serviço encontrado</h3>
+          <p class="text-sm text-slate-500 mt-1 max-w-sm mx-auto">Adicione novos sites ou altere sua busca.</p>
+          <button onclick="openModal()" class="mt-5 bg-neutral-900 hover:bg-neutral-800 text-orange-400 font-medium text-sm px-5 py-2.5 rounded-xl border border-neutral-700 transition">
+            + Adicionar Primeiro Serviço
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification (Desfazer) -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+    <div class="bg-neutral-900 border border-neutral-700 text-slate-200 px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-4 border-l-4 border-l-amber-500 pointer-events-auto">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-trash-can text-amber-500 text-base"></i>
+        <span id="toast-message" class="text-sm font-medium">Serviço removido</span>
+      </div>
+      <button onclick="undoLastAction()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-amber-500/40 transition">
+        Desfazer
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal Cadastro / Edição -->
+  <div id="modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative border-t-4 border-t-orange-500 my-8">
+      
+      <div class="flex justify-between items-center mb-5">
+        <h2 id="modal-title" class="text-lg font-bold text-white">Adicionar Serviço</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white transition w-8 h-8 rounded-lg bg-neutral-800 flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <form id="service-form" onsubmit="saveService(event)">
+        <input type="hidden" id="service-id">
+
+        <div class="space-y-4">
+          <!-- Nome -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Nome do Serviço *</label>
+            <input type="text" id="service-name" required placeholder="Ex: Dashboard de Vendas, Notion..." class="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 transition">
+          </div>
+
+          <!-- Link -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Endereço do Site (URL) *</label>
+            <input type="url" id="service-url" required placeholder="https://meusite.com" class="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 transition">
+          </div>
+
+          <!-- Descrição Oculta -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Descrição / Observação (Opcional)</label>
+            <textarea id="service-description" rows="2" placeholder="Ex: Contém relatórios e acessos dos clientes..." class="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-orange-500 transition resize-none"></textarea>
+          </div>
+
+          <!-- Cor do Card -->
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <label class="block text-xs font-semibold text-slate-300">Cor / Estilo do Cartão</label>
+              <span id="selected-color-name" class="text-xs text-orange-400 font-bold">Azul Real</span>
+            </div>
+            
+            <div class="max-h-56 overflow-y-auto p-2 border border-neutral-800 rounded-xl bg-neutral-950 space-y-3" id="color-options">
+              <!-- Cores categorizadas injetadas via JS -->
+            </div>
+            <input type="hidden" id="service-color" value="#0d47a1">
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6">
+          <button type="button" onclick="closeModal()" class="px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:bg-neutral-800 transition">
+            Cancelar
+          </button>
+          <button type="submit" class="bg-orange-600 hover:bg-orange-500 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-lg shadow-orange-600/30">
+            Salvar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Paletas de Cores Organizadas por Categoria
+    const COLOR_CATEGORIES = [
+      {
+        category: "Degradê / Gradientes",
+        colors: [
+          { name: 'Sunset Neon', value: 'linear-gradient(135deg, #ff0055, #ff5500)', border: '#ff5500' },
+          { name: 'Cyberpunk', value: 'linear-gradient(135deg, #7928ca, #ff0080)', border: '#ff0080' },
+          { name: 'Aurora Boreal', value: 'linear-gradient(135deg, #0070f3, #00dfd8)', border: '#00dfd8' },
+          { name: 'Oceanic Blue', value: 'linear-gradient(135deg, #0f2027, #203a43, #2c5364)', border: '#38bdf8' },
+          { name: 'Emerald Wave', value: 'linear-gradient(135deg, #059669, #10b981, #34d399)', border: '#34d399' },
+          { name: 'Golden Luxury', value: 'linear-gradient(135deg, #b45309, #f59e0b, #fbbf24)', border: '#facc15' }
+        ]
+      },
+      {
+        category: "Vibrantes & Neons",
+        colors: [
+          { name: 'Laranja Fluorescente', value: '#ff5500', border: '#ffaa00' },
+          { name: 'Amarelo Neon', value: '#ca8a04', border: '#facc15' },
+          { name: 'Verde Lima Neon', value: '#65a30d', border: '#a3e635' },
+          { name: 'Verde Elétrico', value: '#059669', border: '#34d399' },
+          { name: 'Ciano Neon', value: '#0891b2', border: '#22d3ee' },
+          { name: 'Azul Elétrico', value: '#0284c7', border: '#38bdf8' },
+          { name: 'Violeta Neon', value: '#7c3aed', border: '#c084fc' },
+          { name: 'Pink Choque', value: '#db2777', border: '#f472b6' },
+          { name: 'Vermelho Fogo', value: '#dc2626', border: '#f87171' }
+        ]
+      },
+      {
+        category: "Clássicos Elegantes",
+        colors: [
+          { name: 'Azul Real', value: '#0d47a1', border: '#1e88e5' },
+          { name: 'Indigo Profundo', value: '#1a237e', border: '#818cf8' },
+          { name: 'Roxo Imperial', value: '#4a148c', border: '#ab47bc' },
+          { name: 'Verde Floresta', value: '#1b5e20', border: '#43a047' },
+          { name: 'Turquesa Escuro', value: '#006064', border: '#00acc1' },
+          { name: 'Vinho / Carmim', value: '#880e4f', border: '#ec407a' },
+          { name: 'Laranja Queimado', value: '#c2410c', border: '#f97316' },
+          { name: 'Vermelho Escuro', value: '#b71c1c', border: '#e53935' }
+        ]
+      },
+      {
+        category: "Sóbrios & Escuros",
+        colors: [
+          { name: 'Cinza Metálico', value: '#334155', border: '#94a3b8' },
+          { name: 'Grafite Nobre', value: '#1e293b', border: '#64748b' },
+          { name: 'Preto Grafite', value: '#121212', border: '#525252' },
+          { name: 'Marrom Tabaco', value: '#451a03', border: '#d97706' },
+          { name: 'Oliva Escuro', value: '#3f6212', border: '#84cc16' }
+        ]
+      },
+      {
+        category: "Tons Pastéis & Suaves",
+        colors: [
+          { name: 'Azul Pastel', value: '#1e3a8a', border: '#60a5fa' },
+          { name: 'Lilás Suave', value: '#581c87', border: '#c084fc' },
+          { name: 'Menta Suave', value: '#064e3b', border: '#6ee7b7' },
+          { name: 'Coral Suave', value: '#831843', border: '#f472b6' },
+          { name: 'Âmbar Suave', value: '#78350f', border: '#fbbf24' },
+          { name: 'Teal Suave', value: '#134e4a', border: '#2dd4bf' }
+        ]
+      }
+    ];
+
+    const ALL_COLORS = COLOR_CATEGORIES.flatMap(cat => cat.colors);
+
+    // Serviços Iniciais Padrão
+    const DEFAULT_SERVICES = [
+      { id: '1', name: 'Receita', url: 'https://exemplo.com', color: '#0d47a1', description: 'Painel com métricas gerais de receita bruta.' },
+      { id: '2', name: 'Despesas', url: 'https://exemplo.com', color: '#7c3aed', description: 'Controle de custos e saídas recorrentes.' },
+      { id: '3', name: 'Lucro Líquido', url: 'https://exemplo.com', color: 'linear-gradient(135deg, #059669, #10b981, #34d399)', description: 'Relatório do balanço final com margem real.' },
+      { id: '4', name: 'Margem', url: 'https://exemplo.com', color: 'linear-gradient(135deg, #ff0055, #ff5500)', description: 'Porcentagem do rendimento operacional.' },
+      { id: '5', name: 'Clientes', url: 'https://exemplo.com', color: '#db2777', description: 'Central de cadastro de clientes ativos.' },
+      { id: '6', name: 'Pedidos', url: 'https://exemplo.com', color: '#0891b2', description: 'Acompanhamento do status de pedidos recentes.' },
+      { id: '7', name: 'Ticket Médio', url: 'https://exemplo.com', color: '#b71c1c', description: 'Valor médio gasto por cliente em compras.' },
+      { id: '8', name: 'CAC', url: 'https://exemplo.com', color: '#1a237e', description: 'Custo de aquisição por novo cliente.' }
+    ];
+
+    let services = [];
+    let historyStack = [];
+    let draggedIndex = null;
+    let openDescriptions = new Set();
+    let openSidebarDescriptions = new Set();
+    let currentViewMode = 'both'; // 'both', 'grid', 'sidebar'
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderColorPicker();
+      loadServices();
+    });
+
+    const firebaseConfig = { apiKey: "AIzaSyAL3TGongH3WCfc8SxgFM8ZoCkM360Orfk", authDomain: "forex-95409.firebaseapp.com", projectId: "forex-95409", storageBucket: "forex-95409.firebasestorage.app", messagingSenderId: "438792695458", appId: "1:438792695458:web:21a4ddcc3cc3217a82f1fb", measurementId: "G-XZ6XXEX1GR" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    function loadServices() {
+      db.collection('central').doc('services').onSnapshot((doc) => {
+        if (doc.exists) {
+          services = doc.data().list || [];
+        } else {
+          services = [...DEFAULT_SERVICES];
+          saveToStorage();
+        }
+        renderAll();
+      });
+    }
+
+    function saveToStorage() {
+      db.collection('central').doc('services').set({ list: services });
+    }
+
+    function pushHistoryState() {
+      historyStack.push(JSON.stringify(services));
+      if (historyStack.length > 20) historyStack.shift();
+      updateUndoButtonState();
+    }
+
+    function undoLastAction() {
+      if (historyStack.length === 0) return;
+
+      const previousState = historyStack.pop();
+      services = JSON.parse(previousState);
+      saveToStorage();
+      renderAll();
+      updateUndoButtonState();
+      hideToast();
+    }
+
+    function updateUndoButtonState() {
+      const undoBtn = document.getElementById('undo-btn');
+      if (historyStack.length > 0) {
+        undoBtn.classList.remove('hidden');
+      } else {
+        undoBtn.classList.add('hidden');
+      }
+    }
+
+    // Modo de Exibição (Ambos, Apenas Grid, Apenas Sidebar)
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      const sidebarContainer = document.getElementById('sidebar-container');
+      const gridContainer = document.getElementById('grid-container');
+
+      const btnBoth = document.getElementById('view-both-btn');
+      const btnGrid = document.getElementById('view-grid-btn');
+      const btnSidebar = document.getElementById('view-sidebar-btn');
+
+      // Reseta estilos de botões
+      [btnBoth, btnGrid, btnSidebar].forEach(btn => {
+        btn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-400 hover:text-white';
+      });
+
+      if (mode === 'both') {
+        sidebarContainer.classList.remove('hidden');
+        gridContainer.classList.remove('hidden');
+        btnBoth.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-orange-600 text-white shadow';
+      } else if (mode === 'grid') {
+        sidebarContainer.classList.add('hidden');
+        gridContainer.classList.remove('hidden');
+        btnGrid.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-orange-600 text-white shadow';
+      } else if (mode === 'sidebar') {
+        sidebarContainer.classList.remove('hidden');
+        sidebarContainer.classList.add('w-full');
+        gridContainer.classList.add('hidden');
+        btnSidebar.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-orange-600 text-white shadow';
+      }
+
+      if (mode !== 'sidebar') {
+        sidebarContainer.classList.remove('w-full');
+      }
+    }
+
+    function toggleDescription(id, event) {
+      event.stopPropagation();
+      if (openDescriptions.has(id)) {
+        openDescriptions.delete(id);
+      } else {
+        openDescriptions.add(id);
+      }
+      
+      const descBox = document.getElementById(`desc-${id}`);
+      const btnIcon = document.getElementById(`eye-icon-${id}`);
+      
+      if (descBox) descBox.classList.toggle('open');
+      if (btnIcon) {
+        btnIcon.classList.toggle('fa-eye');
+        btnIcon.classList.toggle('fa-eye-slash');
+      }
+    }
+
+    function toggleSidebarDescription(id, event) {
+      event.stopPropagation();
+      if (openSidebarDescriptions.has(id)) {
+        openSidebarDescriptions.delete(id);
+      } else {
+        openSidebarDescriptions.add(id);
+      }
+      renderSidebarList();
+    }
+
+    function getStrongBorderColor(bgColor) {
+      const found = ALL_COLORS.find(p => p.value === bgColor);
+      if (found) return found.border;
+      return '#ff5500';
+    }
+
+    function renderAll() {
+      renderCards();
+      renderSidebarList();
+    }
+
+    // Renderiza a Lista Lateral (Sidebar)
+    function renderSidebarList() {
+      const sidebarList = document.getElementById('sidebar-list');
+      const countEl = document.getElementById('sidebar-count');
+      const search = document.getElementById('search-input').value.toLowerCase();
+
+      const filtered = services.filter(s => 
+        s.name.toLowerCase().includes(search) || 
+        (s.description && s.description.toLowerCase().includes(search))
+      );
+
+      countEl.textContent = filtered.length;
+      sidebarList.innerHTML = '';
+
+      if (filtered.length === 0) {
+        sidebarList.innerHTML = `
+          <div class="text-center py-6 text-slate-500 text-xs">
+            Nenhum item encontrado
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach((service) => {
+        const isOpen = openSidebarDescriptions.has(service.id);
+        const originalIndex = services.findIndex(s => s.id === service.id);
+        const hasDesc = service.description && service.description.trim() !== '';
+
+        const item = document.createElement('div');
+        item.className = 'bg-neutral-900/90 border border-neutral-800 rounded-xl p-3 hover:border-orange-500/50 transition group';
+
+        item.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <!-- Indicador de Cor & Nome -->
+            <div class="flex items-center gap-2.5 overflow-hidden flex-1 cursor-pointer" onclick="openLink('${service.url}')">
+              <span class="w-3.5 h-3.5 rounded-full flex-shrink-0 shadow-sm" style="background: ${service.color}"></span>
+              <div class="truncate">
+                <h4 class="text-sm font-bold text-slate-200 group-hover:text-orange-400 transition truncate">${service.name}</h4>
+                <p class="text-[11px] text-slate-500 truncate">${formatUrlDisplay(service.url)}</p>
+              </div>
+            </div>
+
+            <!-- Ações -->
+            <div class="flex items-center gap-1 flex-shrink-0">
+              ${hasDesc ? `
+                <button onclick="toggleSidebarDescription('${service.id}', event)" class="text-xs text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 transition" title="Ver Detalhes">
+                  <i class="fa-solid ${isOpen ? 'fa-chevron-up' : 'fa-chevron-down'}"></i>
+                </button>
+              ` : ''}
+
+              <button onclick="openModal('${service.id}', event)" class="text-xs text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-neutral-800 transition" title="Editar">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+
+              <a href="${service.url}" class="text-xs text-orange-400 hover:text-orange-300 p-1.5 rounded-lg hover:bg-neutral-800 transition" title="Abrir Link">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </a>
+            </div>
+          </div>
+
+          <!-- Descrição Expansível Lateral -->
+          ${hasDesc && isOpen ? `
+            <div class="mt-2.5 pt-2 border-t border-neutral-800/80 text-xs text-slate-400 leading-relaxed bg-black/30 p-2 rounded-lg">
+              <i class="fa-solid fa-circle-info mr-1 text-orange-400"></i> ${service.description}
+            </div>
+          ` : ''}
+        `;
+
+        sidebarList.appendChild(item);
+      });
+    }
+
+    // Renderiza a Grade de Cards
+    function renderCards() {
+      const grid = document.getElementById('cards-grid');
+      const emptyState = document.getElementById('empty-state');
+      const search = document.getElementById('search-input').value.toLowerCase();
+
+      const filtered = services.filter(s => 
+        s.name.toLowerCase().includes(search) || 
+        (s.description && s.description.toLowerCase().includes(search))
+      );
+
+      grid.innerHTML = '';
+
+      if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      } else {
+        emptyState.classList.add('hidden');
+      }
+
+      filtered.forEach((service) => {
+        const originalIndex = services.findIndex(s => s.id === service.id);
+        const isOpen = openDescriptions.has(service.id);
+        const card = document.createElement('div');
+        const borderColor = getStrongBorderColor(service.color);
+        
+        card.className = 'card-item relative rounded-2xl p-4 text-white flex flex-col justify-between cursor-pointer group';
+        
+        if (service.color && service.color.includes('gradient')) {
+          card.style.background = service.color;
+        } else {
+          card.style.backgroundColor = service.color || '#121212';
+        }
+        
+        card.style.borderColor = borderColor;
+        card.draggable = true;
+        card.dataset.index = originalIndex;
+
+        // Drag and Drop
+        card.addEventListener('dragstart', (e) => handleDragStart(e, originalIndex));
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('drop', (e) => handleDrop(e, originalIndex));
+        card.addEventListener('dragend', handleDragEnd);
+
+        const hasDesc = service.description && service.description.trim() !== '';
+
+        card.innerHTML = `
+          <!-- Controles do Topo -->
+          <div class="flex items-center justify-between mb-2">
+            <div class="drag-handle text-white/50 hover:text-white px-1 py-0.5 rounded transition" title="Arrastar para mover">
+              <i class="fa-solid fa-grip-vertical text-xs"></i>
+            </div>
+            
+            <div class="flex items-center gap-1">
+              <!-- Seletor de Descrição (Olho) -->
+              ${hasDesc ? `
+                <button onclick="toggleDescription('${service.id}', event)" class="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/70 flex items-center justify-center text-xs text-white/80 hover:text-white transition" title="Mostrar/Ocultar Descrição">
+                  <i id="eye-icon-${service.id}" class="fa-solid ${isOpen ? 'fa-eye-slash' : 'fa-eye'}"></i>
+                </button>
+              ` : ''}
+
+              <!-- Setas de Reordenação -->
+              <button onclick="moveCard(${originalIndex}, -1, event)" class="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/70 flex items-center justify-center text-xs text-white/80 hover:text-white transition" title="Mover para esquerda">
+                <i class="fa-solid fa-chevron-left"></i>
+              </button>
+              <button onclick="moveCard(${originalIndex}, 1, event)" class="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/70 flex items-center justify-center text-xs text-white/80 hover:text-white transition" title="Mover para direita">
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
+              
+              <!-- Editar -->
+              <button onclick="openModal('${service.id}', event)" class="w-6 h-6 rounded-lg bg-black/40 hover:bg-black/70 flex items-center justify-center text-xs text-white/80 hover:text-white transition ml-1" title="Editar">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+
+              <!-- Excluir -->
+              <button onclick="deleteService('${service.id}', event)" class="w-6 h-6 rounded-lg bg-black/40 hover:bg-red-600 flex items-center justify-center text-xs text-white/80 hover:text-white transition" title="Excluir">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Conteúdo do Card -->
+          <div onclick="openLink('${service.url}')" class="flex items-center justify-between pt-1">
+            <div class="overflow-hidden">
+              <h3 class="font-extrabold text-lg leading-tight truncate text-white" title="${service.name}">${service.name}</h3>
+              <p class="text-xs text-white/80 truncate mt-1 font-medium">${formatUrlDisplay(service.url)}</p>
+            </div>
+            <div class="w-8 h-8 rounded-xl bg-black/30 flex items-center justify-center text-white text-xs group-hover:bg-black/50 transition flex-shrink-0 ml-2 border border-white/20">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </div>
+          </div>
+
+          <!-- Descrição Oculta -->
+          <div id="desc-${service.id}" class="description-box ${isOpen ? 'open' : ''}">
+            <p class="text-xs text-slate-100 leading-relaxed bg-black/40 p-2.5 rounded-lg border border-white/10">
+              <i class="fa-solid fa-circle-info mr-1 text-orange-400"></i> ${service.description || 'Nenhuma descrição adicionada.'}
+            </p>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function formatUrlDisplay(url) {
+      if (!url || url === '#') return 'Link direto';
+      return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    }
+
+    function openLink(url) {
+      if (url && url !== '#') {
+        window.location.href = url;
+      }
+    }
+
+    function moveCard(index, direction, event) {
+      event.stopPropagation();
+      const newIndex = index + direction;
+      if (newIndex < 0 || newIndex >= services.length) return;
+
+      pushHistoryState();
+      const temp = services[index];
+      services[index] = services[newIndex];
+      services[newIndex] = temp;
+
+      saveToStorage();
+      renderAll();
+    }
+
+    // Drag and Drop
+    function handleDragStart(e, index) {
+      draggedIndex = index;
+      e.currentTarget.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDrop(e, targetIndex) {
+      e.preventDefault();
+      if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+      pushHistoryState();
+      const draggedItem = services[draggedIndex];
+      services.splice(draggedIndex, 1);
+      services.splice(targetIndex, 0, draggedItem);
+
+      saveToStorage();
+      renderAll();
+    }
+
+    function handleDragEnd(e) {
+      e.currentTarget.classList.remove('dragging');
+      draggedIndex = null;
+    }
+
+    function deleteService(id, event) {
+      event.stopPropagation();
+      pushHistoryState();
+
+      const service = services.find(s => s.id === id);
+      services = services.filter(s => s.id !== id);
+      saveToStorage();
+      renderAll();
+
+      showToast(`"<b>${service ? service.name : 'Serviço'}</b>" foi removido.`);
+    }
+
+    let toastTimeout;
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-message');
+      
+      toastMsg.innerHTML = message;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        hideToast();
+      }, 5000);
+    }
+
+    function hideToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.remove('translate-y-0', 'opacity-100');
+      toast.classList.add('translate-y-20', 'opacity-0');
+    }
+
+    // Render seletor de cores agrupadas por categorias
+    function renderColorPicker() {
+      const container = document.getElementById('color-options');
+      container.innerHTML = '';
+
+      COLOR_CATEGORIES.forEach((catGroup) => {
+        const catHeader = document.createElement('div');
+        catHeader.className = 'text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1 mb-1.5';
+        catHeader.textContent = catGroup.category;
+        container.appendChild(catHeader);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid grid-cols-6 gap-2 mb-3';
+
+        catGroup.colors.forEach((preset) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.title = preset.name;
+          btn.className = `color-option-btn w-full h-8 rounded-lg transition border-2 border-transparent hover:scale-105 shadow-md relative`;
+          
+          if (preset.value.includes('gradient')) {
+            btn.style.background = preset.value;
+          } else {
+            btn.style.backgroundColor = preset.value;
+          }
+
+          btn.onclick = () => selectColor(preset, btn);
+          grid.appendChild(btn);
+        });
+
+        container.appendChild(grid);
+      });
+    }
+
+    function selectColor(preset, element) {
+      document.getElementById('service-color').value = preset.value;
+      document.getElementById('selected-color-name').textContent = preset.name;
+
+      const buttons = document.querySelectorAll('.color-option-btn');
+      buttons.forEach(b => {
+        b.classList.remove('border-white', 'scale-110', 'ring-2', 'ring-orange-500');
+        b.classList.add('border-transparent');
+      });
+      element.classList.remove('border-transparent');
+      element.classList.add('border-white', 'scale-110', 'ring-2', 'ring-orange-500');
+    }
+
+    function openModal(id = null, event = null) {
+      if (event) event.stopPropagation();
+      const modal = document.getElementById('modal');
+      const title = document.getElementById('modal-title');
+      const form = document.getElementById('service-form');
+
+      form.reset();
+
+      if (id) {
+        const service = services.find(s => s.id === id);
+        if (service) {
+          title.textContent = 'Editar Serviço';
+          document.getElementById('service-id').value = service.id;
+          document.getElementById('service-name').value = service.name;
+          document.getElementById('service-url').value = service.url;
+          document.getElementById('service-description').value = service.description || '';
+          document.getElementById('service-color').value = service.color;
+          
+          const foundPreset = ALL_COLORS.find(c => c.value === service.color) || { name: 'Personalizado', value: service.color };
+          document.getElementById('selected-color-name').textContent = foundPreset.name;
+
+          const buttons = document.querySelectorAll('.color-option-btn');
+          buttons.forEach((b, idx) => {
+            const preset = ALL_COLORS[idx];
+            if (preset && preset.value === service.color) {
+              selectColor(preset, b);
+            }
+          });
+        }
+      } else {
+        title.textContent = 'Adicionar Serviço';
+        document.getElementById('service-id').value = '';
+        const defaultPreset = ALL_COLORS[0];
+        const firstBtn = document.querySelector('.color-option-btn');
+        if (firstBtn) selectColor(defaultPreset, firstBtn);
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
+
+    function saveService(e) {
+      e.preventDefault();
+      pushHistoryState();
+
+      const id = document.getElementById('service-id').value;
+      const name = document.getElementById('service-name').value.trim();
+      let url = document.getElementById('service-url').value.trim();
+      const description = document.getElementById('service-description').value.trim();
+      const color = document.getElementById('service-color').value;
+
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+
+      if (id) {
+        const index = services.findIndex(s => s.id === id);
+        if (index !== -1) {
+          services[index] = { ...services[index], name, url, description, color };
+        }
+      } else {
+        const newService = {
+          id: Date.now().toString(),
+          name,
+          url,
+          description,
+          color
+        };
+        services.push(newService);
+      }
+
+      saveToStorage();
+      renderAll();
+      closeModal();
+    }
+  </script>
+</body>
+</html>
